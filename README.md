@@ -1,3 +1,6 @@
+# I am fixing some faults and shim problems regarding secure boot.
+# For now disable secure-boot for the script to work & keep it disabled for the fix to persist.
+
 # 🚀 MediaTek MT7927 (Filogic 380) Linux Setup & Diagnostics
 
 An all-in-one bash script to automate the installation, configuration, and troubleshooting of the **MediaTek MT7927 Wi-Fi 7 & Bluetooth PCIe adapter** on Linux. 
