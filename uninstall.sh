@@ -29,7 +29,7 @@ if [[ $EUID -ne 0 ]]; then
 fi
 
 echo "=========================================================="
-echo " MediaTek MT7927 Wi-Fi 7 & Bluetooth Uninstaller         "
+echo " MediaTek MT7927 Wi-Fi 7 & Bluetooth Uninstaller          "
 echo "=========================================================="
 echo
 
@@ -65,26 +65,33 @@ modprobe -r mt7925e btmtk btusb &>/dev/null || true
 depmod -a &>/dev/null || true
 echo "[✓] Kernel module dependencies refreshed"
 
-# 6. Optional: Clean up newer/orphaned kernels causing "bad shim lock" errors
+# 6. Clean up newer/orphaned kernels and update boot entries
 CURRENT_KERNEL="$(uname -r)"
-CURRENT_VER_STR=$(echo "$CURRENT_KERNEL" | cut -d- -f1,2)
 
-INSTALLED_PACKAGES=$(dpkg-query -W -f='${Package}\n' 'linux-image-*' 'linux-headers-*' 'linux-modules-*' 2>/dev/null | grep -E '[0-9]+\.[0-9]+\.[0-9]+' || true)
+# Find all installed kernel-related packages excluding the currently running one
+INSTALLED_PACKAGES=$(dpkg-query -W -f='${Package}\n' 'linux-image-[0-9]*' 'linux-headers-[0-9]*' 'linux-modules-[0-9]*' 2>/dev/null || true)
 NEWER_PACKAGES=()
 
 while IFS= read -r pkg; do
     [[ -z "$pkg" ]] && continue
-    if [[ "$pkg" == *"${CURRENT_VER_STR}"* ]] || [[ "$pkg" == *-generic ]]; then
+    # Skip packages belonging to the currently running kernel version
+    if [[ "$pkg" == *"$CURRENT_KERNEL"* ]]; then
         continue
     fi
+    
+    # Extract version string from package name
     PKG_VER=$(echo "$pkg" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+-[0-9]+' || true)
     [[ -z "$PKG_VER" ]] && continue
 
-    HIGHEST=$(printf "%s\n%s\n" "$CURRENT_VER_STR" "$PKG_VER" | sort -V | tail -n1)
-    if [[ "$HIGHEST" == "$PKG_VER" && "$PKG_VER" != "$CURRENT_VER_STR" ]]; then
+    # Compare versions to find newer kernels
+    HIGHEST=$(printf "%s\n%s\n" "$CURRENT_KERNEL" "$PKG_VER" | sort -V | tail -n1)
+    if [[ "$HIGHEST" == "$PKG_VER" && "$PKG_VER" != "$CURRENT_KERNEL" ]]; then
         NEWER_PACKAGES+=("$pkg")
     fi
 done <<< "$INSTALLED_PACKAGES"
+
+# Deduplicate array elements
+mapfile -t NEWER_PACKAGES < <(printf "%s\n" "${NEWER_PACKAGES[@]}" | sort -u)
 
 if [[ ${#NEWER_PACKAGES[@]} -gt 0 ]]; then
     echo
@@ -100,9 +107,19 @@ if [[ ${#NEWER_PACKAGES[@]} -gt 0 ]]; then
         y|Y )
             echo "[!] Purging newer kernel packages..."
             apt-get purge -y "${NEWER_PACKAGES[@]}"
-            echo "[!] Updating GRUB bootloader..."
+            
+            echo "[!] Cleaning up leftover dependencies..."
+            apt-get autoremove -y
+            
+            echo "[!] Updating GRUB and EFI boot entries..."
             update-grub
-            echo "[✓] Newer kernels purged successfully"
+            
+            # If systemd-boot is used instead of GRUB
+            if command -v bootctl &>/dev/null && [[ -d /efi/loader || -d /boot/loader ]]; then
+                bootctl update || true
+            fi
+            
+            echo "[✓] Newer kernels purged and bootloader updated successfully"
             ;;
         * )
             echo "[i] Skipping newer kernel removal."
