@@ -1,5 +1,5 @@
-# I am fixing some faults and shim problems regarding secure boot.
-# For now disable secure-boot for the script to work & keep it disabled for the fix to persist.
+For now disable secure-boot for the script to work & keep it disabled for the fix to persist.
+I am creating one that does works with secure boot.
 
 # 🚀 MediaTek MT7927 (Filogic 380) Linux Setup & Diagnostics
 
