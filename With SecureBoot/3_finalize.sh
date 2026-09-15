@@ -5,19 +5,40 @@ if [[ $EUID -ne 0 ]]; then
     exec sudo "$0" "$@"
 fi
 
-MODULE="mediatek-mt7927"
+MODULE="mt7925e"
 VERSION="2.9"
 KERNEL_VER="$(uname -r)"
 MOK_DIR="/var/lib/shim-signed/mok"
 
 echo "=========================================================="
-echo " STEP 3: Firmware Deployment & Driver Activation"
+echo " STEP 3: Firmware Deployment, Driver Activation & Signing Hook"
 echo " Secure Boot State: Must be ON"
 echo "=========================================================="
 
-apt-get update -qq && apt-get install -y git curl wget iw tar gzip
+apt-get update -qq && apt-get install -y git curl wget iw tar gzip sbsigntool
 
-# [1/2] Firmware Deployment for MT7927
+# [1/3] Setup Automated Kernel Signing Hook (Fixes In-Place Fragility)
+echo "[✓] Setting up automated kernel signing hook for future updates..."
+mkdir -p /etc/kernel/postinst.d
+cat << 'EOF' > /etc/kernel/postinst.d/zz-sbsign
+#!/usr/bin/env bash
+set -e
+
+MOK_PRIV="/var/lib/shim-signed/mok/MOK.priv"
+MOK_CERT="/var/lib/shim-signed/mok/MOK.pem"
+
+KERNEL_VERSION="$1"
+VMLINUZ_PATH="/boot/vmlinuz-${KERNEL_VERSION}"
+
+if [[ -f "$MOK_PRIV" && -f "$MOK_CERT" && -f "$VMLINUZ_PATH" ]]; then
+    echo "==> Automatically signing kernel ${KERNEL_VERSION} for Secure Boot..."
+    sbsign --key "$MOK_PRIV" --cert "$MOK_CERT" --output "$VMLINUZ_PATH" "$VMLINUZ_PATH"
+    echo "==> Successfully signed /boot/vmlinuz-${KERNEL_VERSION}"
+fi
+EOF
+chmod +x /etc/kernel/postinst.d/zz-sbsign
+
+# [2/3] Firmware Deployment for MT7927
 echo "[✓] Downloading and deploying MT7927 firmware binaries..."
 FIRMWARE_DIR="/lib/firmware/mediatek/mt7927"
 mkdir -p "${FIRMWARE_DIR}"
@@ -38,24 +59,24 @@ done
 curl -sLo "/lib/firmware/mediatek/BT_RAM_CODE_MT6639_2_1_hdr.bin" "${GITLAB_BT_URL}" || true
 cp -f "/lib/firmware/mediatek/BT_RAM_CODE_MT6639_2_1_hdr.bin" "${FIRMWARE_DIR}/BT_RAM_CODE_MT6639_2_1_hdr.bin" 2>/dev/null || true
 
-# [2/2] Power & Regulatory Tweaks
-echo "options mt7925e disable_aspm=1" > /etc/modprobe.d/mt7925e.conf
+# [3/3] Power & Regulatory Tweaks
+echo "options ${MODULE} disable_aspm=1" > /etc/modprobe.d/mt7925e.conf
 mkdir -p /etc/NetworkManager/conf.d/
 echo -e "[connection]\nwifi.powersave = 2" > /etc/NetworkManager/conf.d/disable-powersave.conf
 iw reg set "US" || true
 
 # Reload Modules
-modprobe -r mt7925e btusb btmtk 2>/dev/null || true
+modprobe -r "${MODULE}" btusb btmtk 2>/dev/null || true
 sleep 1
-modprobe mt7925e || true
+modprobe "${MODULE}" || true
 modprobe btmtk || true
 modprobe btusb || true
 
 echo "=========================================================="
 echo " [✓] SETUP COMPLETE WITH SECURE BOOT ACTIVE!"
 echo "=========================================================="
-if lsmod | grep -q "^mt7925e"; then
-    echo " [✓] Success: mt7925e driver is active and running!"
+if lsmod | grep -q "^${MODULE}"; then
+    echo " [✓] Success: ${MODULE} driver is active and running!"
 else
     echo " [!] Note: Please restart your computer once more to initialize hardware."
 fi
