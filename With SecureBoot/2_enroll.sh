@@ -17,8 +17,8 @@ echo "=========================================================="
 
 apt-get update -qq && apt-get install -y mokutil openssl sbsigntool shim-signed grub-efi-amd64-signed
 
+rm -rf "$MOK_DIR"
 mkdir -p "$MOK_DIR"
-rm -rf "$MOK_DIR/*"
 
 echo "[✓] Generating fresh MOK keypair..."
 openssl req -new -x509 -nodes -days 36500 \
